@@ -1,0 +1,6 @@
+<p>DISPATCH LOG // CASCADE CORRIDOR SECTOR 4</p>
+Unit: Drone-Alpha-07 | Base: Bellevue, WA | Target: Snoqualmie Pass Relay Tower
+Telemetry Alert: Heavy precipitation and gusting winds expected along I-90 corridor.
+Payload: LiDAR terrain scanner and backup battery pack.
+Verification URL: https://status.weatherrunner.local/sector4
+Action Required: Cross-check live NWS forecast alerts against battery thermal limits and edge node disk capacity before launch.

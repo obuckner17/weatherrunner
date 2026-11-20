@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WEATHER RUNNER — Akamai Cloud Verified Agent</title>
+  <style>
+    body { margin: 0; background: #080c14; color: #f1f5f9; font-family: system-ui, monospace; padding: 2rem; display: flex; justify-content: center; }
+    .wrap { max-width: 840px; width: 100%; }
+    .header { display: flex; justify-content: space-between; border-bottom: 1px solid #1e293b; padding-bottom: 0.75rem; margin-bottom: 1.5rem; color: #00a8ff; font-size: 0.85rem; }
+    .badges { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; font-size: 0.78rem; }
+    .badge { padding: 0.3rem 0.65rem; border-radius: 999px; background: #0f172a; border: 1px solid #1e293b; }
+    .badge.ok { border-color: #10b981; color: #10b981; }
+    .card { background: #0f1624; border: 1px solid #1e293b; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem; }
+    .row { display: flex; gap: 0.75rem; margin-bottom: 0.85rem; flex-wrap: wrap; }
+    input[type="text"], select, textarea { background: #060910; border: 1px solid #1e293b; color: #f1f5f9; padding: 0.7rem; border-radius: 6px; font-family: inherit; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 75px; margin-bottom: 0.85rem; }
+    button { background: #00a8ff; color: #04101c; font-weight: 700; border: none; padding: 0.7rem 1.2rem; border-radius: 6px; cursor: pointer; }
+    button.sec { background: #1e293b; color: #e2e8f0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+    .stat { background: #060910; border: 1px solid #1e293b; border-radius: 6px; padding: 0.85rem; }
+    .stat .k { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; }
+    .stat .v { font-size: 1.3rem; font-weight: 700; margin-top: 0.3rem; color: #10b981; }
+    .answer { background: #060910; border-left: 3px solid #00a8ff; padding: 1rem; line-height: 1.55; white-space: pre-wrap; }
+    pre { background: #04070d; padding: 0.85rem; border-radius: 6px; overflow-x: auto; font-size: 0.8rem; color: #cbd5e1; border: 1px solid #1e293b; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <span>WEATHER RUNNER</span>
+      <span>AKAMAI INFERENCE + OBJECT STORAGE + MCP</span>
+    </div>
+
+    <div class="badges">
+      <span class="badge" id="bInf">Inference: checking...</span>
+      <span class="badge" id="bObj">Object Storage: checking...</span>
+    </div>
+
+    <div class="card">
+      <div style="font-size:0.8rem; color:#94a3b8; margin-bottom:0.5rem;">1. AKAMAI OBJECT STORAGE (S3 BUCKET INGESTION)</div>
+      <div class="row">
+        <input type="file" id="fileInput" />
+        <button class="sec" onclick="uploadFile()">Upload to Akamai Bucket</button>
+        <select id="fileSelect"><option value="">-- Select bucket file --</option></select>
+      </div>
+
+      <div style="font-size:0.8rem; color:#94a3b8; margin:0.75rem 0 0.4rem;">
+        2. DISPATCHER FOCUS / PRE-LAUNCH PACING GATE (TARGET: 6.00s) — <span id="paceVal">6.00s</span>
+      </div>
+      <input type="range" id="slider" min="0" max="100" value="0" style="width:100%; margin-bottom:0.85rem;" />
+
+      <textarea id="promptInput">Fetch live NWS weather alerts and forecast for Bellevue, WA (47.6101, -122.2015), analyze the selected Akamai Object Storage dispatch file, and verify edge telemetry.</textarea>
+      <button id="execBtn" onclick="runAgent()">EXECUTE VERIFIED MCP STREAM</button>
+    </div>
+
+    <div class="card" id="outCard" style="display:none;">
+      <div class="grid">
+        <div class="stat"><div class="k">Grounding Confidence</div><div class="v" id="sGround">--</div></div>
+        <div class="stat"><div class="k">MCP Tools Invoked</div><div class="v" id="sTools">--</div></div>
+        <div class="stat"><div class="k">Roundtrip Latency</div><div class="v" id="sLat" style="color:#00a8ff;">--</div></div>
+      </div>
+
+      <div class="answer" id="answerBox"></div>
+
+      <details style="margin-top:1rem; color:#00a8ff; font-size:0.85rem;">
+        <summary style="cursor:pointer;">Inspect Raw Protocol Trace &amp; Deterministic Output Verification</summary>
+        <pre id="traceBox"></pre>
+      </details>
+    </div>
+  </div>
+
+  <script>
+    let tStart = null, paceSec = 6.0;
+    const slider = document.getElementById('slider');
+    slider.addEventListener('mousedown', () => tStart = performance.now());
+    slider.addEventListener('input', () => {
+      if (tStart) {
+        paceSec = Math.max(0.5, (performance.now() - tStart) / 1000);
+        document.getElementById('paceVal').textContent = paceSec.toFixed(2) + 's';
+      }
+    });
+
+    async function refreshStatus() {
+      const s = await (await fetch('/api/status')).json();
+      const bInf = document.getElementById('bInf');
+      bInf.textContent = `Inference: ${s.model}`;
+      if (s.inference_configured) bInf.classList.add('ok');
+
+      const bObj = document.getElementById('bObj');
+      bObj.textContent = `Object Storage: ${s.bucket}`;
+      if (s.object_storage_configured) bObj.classList.add('ok');
+
+      const f = await (await fetch('/api/files')).json();
+      const sel = document.getElementById('fileSelect');
+      sel.innerHTML = '<option value="">-- No file selected --</option>';
+      for (const key of (f.files || [])) {
+        const opt = document.createElement('option');
+        opt.value = key; opt.textContent = key;
+        sel.appendChild(opt);
+      }
+    }
+
+    async function uploadFile() {
+      const inp = document.getElementById('fileInput');
+      if (!inp.files.length) return alert('Choose a file first.');
+      const fd = new FormData();
+      fd.append('file', inp.files[0]);
+      await fetch('/api/upload', { method: 'POST', body: fd });
+      await refreshStatus();
+    }
+
+    async function runAgent() {
+      const btn = document.getElementById('execBtn');
+      btn.disabled = true; btn.textContent = 'RUNNING AKAMAI INFERENCE & VERIFICATION...';
+      try {
+        const res = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: document.getElementById('promptInput').value,
+            object_key: document.getElementById('fileSelect').value,
+            pacing_sec: paceSec
+          })
+        });
+        const data = await res.json();
+        document.getElementById('outCard').style.display = 'block';
+        document.getElementById('sGround').textContent = data.trace.verification.grounding_confidence_pct + '%';
+        document.getElementById('sTools').textContent = data.trace.verification.tools_invoked_count;
+        document.getElementById('sLat').textContent = data.latency_ms + 'ms';
+        document.getElementById('answerBox').textContent = data.answer;
+        document.getElementById('traceBox').textContent = JSON.stringify(data.trace, null, 2);
+      } finally {
+        btn.disabled = false; btn.textContent = 'EXECUTE VERIFIED MCP STREAM';
+      }
+    }
+    refreshStatus();
+  </script>
+</body>
+</html>
